@@ -1,0 +1,62 @@
+cff-version: 1.2.0
+message: "If you use peeters, please cite the version you used (its DOI is on Zenodo), and FlowSOM."
+title: "peeters: FlowSOM on gated flow cytometry populations, differential abundance between conditions, and its figures"
+type: software
+authors:
+  - family-names: Saelens
+    given-names: Wouter
+license: MIT
+repository-code: "https://github.com/instantomics/peeters"
+url: "https://pypi.org/project/peeters/"
+keywords:
+  - flow cytometry
+  - FlowSOM
+  - differential abundance
+  - clustering
+references:
+  - type: article
+    title: "FlowSOM: Using self-organizing maps for visualization and interpretation of cytometry data"
+    authors:
+      - family-names: Van Gassen
+        given-names: Sofie
+      - family-names: Callebaut
+        given-names: Britt
+      - family-names: Van Helden
+        given-names: Mary J.
+      - family-names: Lambrecht
+        given-names: Bart N.
+      - family-names: Demeester
+        given-names: Piet
+      - family-names: Dhaene
+        given-names: Tom
+      - family-names: Saeys
+        given-names: Yvan
+    journal: "Cytometry Part A"
+    volume: 87
+    issue: 7
+    start: 636
+    end: 645
+    year: 2015
+    doi: "10.1002/cyto.a.22625"
+  - type: article
+    title: "Analyzing high-dimensional cytometry data using FlowSOM"
+    authors:
+      - family-names: Quintelier
+        given-names: Katrien
+      - family-names: Couckuyt
+        given-names: Artuur
+      - family-names: Emmaneel
+        given-names: Annelies
+      - family-names: Aerts
+        given-names: Joachim
+      - family-names: Saeys
+        given-names: Yvan
+      - family-names: Van Gassen
+        given-names: Sofie
+    journal: "Nature Protocols"
+    volume: 16
+    issue: 8
+    start: 3775
+    end: 3801
+    year: 2021
+    doi: "10.1038/s41596-021-00550-0"

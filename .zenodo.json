@@ -1,0 +1,13 @@
+{
+  "title": "peeters: FlowSOM on gated flow cytometry populations, differential abundance between conditions, and its figures",
+  "description": "<p>FlowSOM on a gated flow cytometry population over many FCS files (gated as ALN gating files say), per-file counts and medians, differential abundance between conditions per node or metacluster (as FlowSOM's GroupStats), and its figures: the FlowSOM tree with a band around every node that differs, and a node heatmap with each node as high as its share and a strip per comparison.</p>",
+  "upload_type": "software",
+  "creators": [{"name": "Saelens, Wouter"}],
+  "license": "MIT",
+  "keywords": ["flow cytometry", "FlowSOM", "differential abundance", "clustering"],
+  "related_identifiers": [
+    {"identifier": "https://pypi.org/project/peeters/", "relation": "isIdenticalTo", "scheme": "url"},
+    {"identifier": "10.1002/cyto.a.22625", "relation": "references", "scheme": "doi"},
+    {"identifier": "10.1038/s41596-021-00550-0", "relation": "references", "scheme": "doi"}
+  ]
+}

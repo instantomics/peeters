@@ -47,6 +47,20 @@ node_heatmap(res, [exp1, exp2], names={6: "KC-like"})                # a strip p
 `file_medians.csv`, `params.json`, `model.pkl` and the tree, heatmap and composition
 figures; `load(folder)` reads a run back without training again.
 
+## Citing
+
+Every release is archived on Zenodo with a DOI of its own: cite the version you used (the
+DOI of a version is on its Zenodo page and in the GitHub release), and FlowSOM:
+
+- Van Gassen S, et al. FlowSOM: Using self-organizing maps for visualization and
+  interpretation of cytometry data. *Cytometry A* 87, 636-645 (2015).
+  [doi:10.1002/cyto.a.22625](https://doi.org/10.1002/cyto.a.22625)
+- Quintelier K, et al. Analyzing high-dimensional cytometry data using FlowSOM.
+  *Nat Protoc* 16, 3775-3801 (2021).
+  [doi:10.1038/s41596-021-00550-0](https://doi.org/10.1038/s41596-021-00550-0)
+
+GitHub's *Cite this repository* (from `CITATION.cff`) gives the same.
+
 ## Release
 
 `./dist.sh <version>` from a clean, pushed `main`: tags, builds, makes the GitHub release
