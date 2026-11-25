@@ -52,11 +52,12 @@ class Result:
 
 
 def inputs(g: ag.Gating, in_dir: str = "/in", only: list[str] | None = None,
-           files: dict[str, str] | None = None) -> list[Input]:
-    """The gating's FCS files as the run has them. ``files``: {data id: path} when the
-    gating does not name its files or the inputs were renamed. Otherwise each file is
-    ``/in/<name>``; a name that comes twice is ``<stem>-2<suffix>``, ``-3``..., in the order
-    the inputs were given (as ALN names them): so give the inputs in the gating's order.
+           files: dict[str, str] | None = None, data_dir: str = "/data") -> list[Input]:
+    """The gating's FCS files as the run has them: each by its data id, where ALN puts
+    every data input, ``/data/<id>/<name>`` (in a workspace it stays there for later
+    calls), so files of one name never meet. ``files``: {data id: path} to say otherwise.
+    A file found at neither is ``/in/<name>`` as an older ALN gave it (a name that comes
+    twice is ``<stem>-2<suffix>``, ``-3``..., in the order the inputs were given).
     ``only``: data ids, names or samples of the files to use (default: all)."""
     picked = [e for e in g.files
               if not only or e.data in only or e.name in only or e.sample in only]
@@ -68,6 +69,8 @@ def inputs(g: ag.Gating, in_dir: str = "/in", only: list[str] | None = None,
             if e.data not in files:
                 continue
             path = files[e.data]
+        elif e.data and (found := _by_id(Path(data_dir) / e.data, e.name)) is not None:
+            path = found
         else:
             if not e.name:
                 raise ValueError(f"the gating names no file name for {e.data}: give "
@@ -80,6 +83,14 @@ def inputs(g: ag.Gating, in_dir: str = "/in", only: list[str] | None = None,
             raise FileNotFoundError(f"{path} ({e.data}) is not in the run: give it as an input")
         out.append(Input(path, e.data, e.name, e.sample, e))
     return out
+
+
+def _by_id(folder: Path, name: str | None) -> str | None:
+    """The file of one data id in /data (its name in the gating, else its only file)."""
+    if name and (folder / name).is_file():
+        return str(folder / name)
+    there = [p for p in folder.iterdir() if p.is_file()] if folder.is_dir() else []
+    return str(there[0]) if len(there) == 1 else None
 
 
 def _samples_table(g: ag.Gating | None, samples: Any) -> tuple[pd.DataFrame | None, str | None]:

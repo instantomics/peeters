@@ -132,6 +132,20 @@ def test_inputs_follow_alns_names(experiment):
                    "Tube_005.fcs", "Tube_006.fcs"]
 
 
+def test_inputs_are_found_by_their_data_id(experiment, tmp_path):
+    """Where ALN puts data, /data/<id>/<name>: no -2 names, no order to keep."""
+    root, ind, _ = experiment
+    g = ag.load_gating(root / "gating" / "t.gating.yaml")
+    for i in range(6):  # all six under one name: they cannot meet
+        (tmp_path / f"dat_test{i:06d}").mkdir()
+        (tmp_path / f"dat_test{i:06d}" / "Specimen_001_Tube_001.fcs").write_bytes(b"x")
+    got = inputs(g, str(ind), data_dir=str(tmp_path))
+    assert [Path(i.path).parent.name for i in got] == [f"dat_test{i:06d}" for i in range(6)]
+    assert [i.data for i in got] == [f"dat_test{i:06d}" for i in range(6)]
+    (tmp_path / "dat_test000001" / "Specimen_001_Tube_001.fcs").unlink()  # not there: /in
+    assert Path(inputs(g, str(ind), data_dir=str(tmp_path))[1].path) == ind / "Tube_002.fcs"
+
+
 def test_gate_counts_are_exact(experiment):
     root, ind, truths = experiment
     g = ag.load_gating(root / "gating" / "t.gating.yaml")
