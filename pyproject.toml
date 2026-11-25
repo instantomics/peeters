@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=69", "wheel", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peeters"
+authors = [
+    {name = "Wouter Saelens", email = "wouter.saelens@gmail.com"},
+]
+description = "FlowSOM on gated flow cytometry populations, differential abundance between conditions, and its figures"
+requires-python = ">=3.11"
+keywords = ["bioinformatics", "flow cytometry", "FlowSOM", "differential abundance"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "anndata>=0.10",
+    "flowsom>=0.2.2",
+    "matplotlib>=3.8",
+    "mudata>=0.3",
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "pyyaml>=6",
+    "scipy>=1.12",
+]
+dynamic = ["version"]
+readme = "README.md"
+license = "MIT"
+
+[project.urls]
+"Homepage" = "https://github.com/instantomics/peeters"
+"Bug Tracker" = "https://github.com/instantomics/peeters/issues"
+
+[project.optional-dependencies]
+test = ["pytest", "ruff"]
+
+[tool.setuptools_scm]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+filterwarnings = ["ignore"]
