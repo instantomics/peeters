@@ -22,7 +22,8 @@ pip install peeters
    onto the tree.
 3. **Count** each file's share of every node and metacluster, and the medians of every marker.
 4. **Compare** two groups of files per node or metacluster, as FlowSOM's `GroupStats` does:
-   per-file shares, Mann-Whitney test, Benjamini-Hochberg.
+   per-file shares, Mann-Whitney test, Benjamini-Hochberg; or two parts of the same samples,
+   paired (Wilcoxon signed-rank on the per-sample log2 ratios).
 5. **Draw** it: the tree with a coloured band around every node that differs, and a node
    heatmap with each node as high as its share and a strip per comparison.
 
@@ -43,6 +44,20 @@ plot_differential(res, nodes)                                        # the tree 
 exp1 = differential(res, "genotype", ("WT", "KO"), where={"cohort": "Exp1"})
 exp2 = differential(res, "genotype", ("WT", "KO"), where={"cohort": "Exp2"})
 node_heatmap(res, [exp1, exp2], names={6: "KC-like"})                # a strip per cohort
+```
+
+**Two populations in the same sample** (a competitive chimera, a reporter, two guides):
+`parts` counts each on one tree, and `paired` compares them sample by sample, so each
+sample's own mixture cancels out:
+
+```python
+res = run("gating/chimera.gating.yaml", "Donor", markers,
+          parts={"WT": "WT donor", "EM3": "EM3 donor"}, samples="samples.csv")
+d3 = differential(res, "part", ("WT", "EM3"), paired="source_file", where={"day": "D3"},
+                  call="consistent")    # 5 mice: every mouse the same way (no q < 0.05 exists)
+d14 = differential(res, "part", ("WT", "EM3"), paired="source_file", where={"day": "D14"},
+                   call="consistent")
+node_heatmap(res, [d3, d14])            # a strip per day; a dark bar where a node differs
 ```
 
 `run` writes `files.csv`, `metaclusters.csv`, `nodes.csv`, `metacluster_medians.csv`,

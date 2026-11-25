@@ -23,6 +23,8 @@ EXPRESSION = "magma"
 MIN_SHARE = 0.25
 #: the colour of a node that does not differ: this much of its colour on the surface
 FADE = 0.18
+#: inches: the rail beside a strip, dark where the node differs
+RAIL = 0.07
 
 
 def marker_label(name: str) -> tuple[str, str]:
@@ -111,7 +113,8 @@ def _spread(want: list[float], gap: float, lo: float, hi: float) -> list[float]:
 def draw(profiles: pd.DataFrame, node_mc: pd.Series, share: pd.Series,
          comparisons: dict[str, pd.DataFrame], path: str | Path, *,
          names: dict[int, str] | None = None, title: str = "", population: str = "cells",
-         alpha: float = 0.05, min_fold: float = 1.5, extra: list[str] = ()) -> Path:
+         alpha: float = 0.05, min_fold: float = 1.5, extra: list[str] = (),
+         rule: str | None = None) -> Path:
     """``profiles``: nodes x markers (display units 0-1; the ``extra`` ones drawn after a
     gap, as not clustered on); ``node_mc``: node -> metacluster; ``share``: node -> % of
     the population; ``comparisons``: a label (``" | "`` breaks it in lines; a line every
@@ -188,10 +191,13 @@ def draw(profiles: pd.DataFrame, node_mc: pd.Series, share: pd.Series,
                 continue
             r = d.loc[n]
             col = np.array(div(dnorm(np.clip(r["log2_fold"], -lim, lim)))[:3])
-            if str(r.get("direction") or "") not in ("up", "down"):
+            differs = str(r.get("direction") or "") in ("up", "down")
+            if not differs:
                 col = col * FADE + surface * (1 - FADE)
-            box(j * cmp_cell, (j + 1) * cmp_cell - 0.05, y0, y1, facecolor=tuple(col),
-                edgecolor="none")
+            x0, x1 = j * cmp_cell, (j + 1) * cmp_cell - 0.05
+            box(x0, x1 - RAIL, y0, y1, facecolor=tuple(col), edgecolor="none")
+            if differs:  # the call on its own channel: a small change is pale, not faded
+                box(x1 - RAIL + 0.012, x1, y0, y1, facecolor=style.INK, edgecolor="none")
         for k, mk in enumerate(markers):
             box(mk_x(k), mk_x(k) + CELL, y0, y1, facecolor=expr(float(profiles.at[n, mk])),
                 edgecolor="none")
@@ -251,8 +257,11 @@ def draw(profiles: pd.DataFrame, node_mc: pd.Series, share: pd.Series,
         cb.ax.tick_params(labelsize=6.5, length=0)
         cb.set_label(label, fontsize=7, color=style.INK_2)
     bar(0.35, "log2 fold change of the node's share", plt.cm.ScalarMappable(dnorm, div))
-    fig.text(2.6 / W, 0.42 / H, f"full colour: q < {alpha}, at least {min_fold}-fold\n"
-             "faded: not different", fontsize=6.6, color=style.INK_2, va="center")
+    fig.add_artist(Rectangle((2.6 / W, 0.36 / H), 0.07 / W, 0.17 / H, facecolor=style.INK,
+                             edgecolor="none", transform=fig.transFigure))
+    fig.text(2.74 / W, 0.445 / H, f"differs: {rule or f'q < {alpha}, at least {min_fold}-fold'}"
+             "\nwithout the bar, faded: does not differ", fontsize=6.6, color=style.INK_2,
+             va="center")
     bar(4.6, "marker median on its scale (0-1)" + (";  * not clustered on" if extra else ""),
         plt.cm.ScalarMappable(Normalize(0, 1), expr))
     fig.text(0.35 / W, 1 - 0.28 / H, title, fontsize=12, color=style.INK, va="top")
@@ -270,7 +279,8 @@ def comparison_label(diff: pd.DataFrame) -> str:
     and the comparison (the last is usually the same for every strip)."""
     at = diff.attrs
     parts = [at["where_label"]] if at.get("where_label") else []
-    parts.append(f"{at['n_other']} vs {at['n_reference']} files")
+    parts.append(f"{at['n_reference']} pairs" if at.get("paired")
+                 else f"{at['n_other']} vs {at['n_reference']} files")
     parts.append(f"{at['other']} vs {at['reference']}")
     return " | ".join(parts)
 
@@ -303,9 +313,13 @@ def node_heatmap(res, diffs, path: str | Path | None = None, *, names=None,
     files = sorted({f for d in diffs.values()
                     for f in d.attrs["files_reference"] + d.attrs["files_other"]})
     share = res.wide("nodes", "percent").fillna(0.0).loc[files].mean()
-    alpha = next(iter(diffs.values())).attrs.get("alpha", 0.05)
-    min_fold = next(iter(diffs.values())).attrs.get("min_fold", 1.5)
+    from .differential import rule
+
+    first = next(iter(diffs.values())).attrs
+    alpha, min_fold = first.get("alpha", 0.05), first.get("min_fold", 1.5)
+    rules = {rule(d.attrs) for d in diffs.values()}
     path = Path(path) if path is not None else res.out / "node_heatmap.png"
     return draw(profiles, node_mc, share, diffs, path, names=names, title=title,
                 population=population or res.params.get("population") or "cells",
-                alpha=alpha, min_fold=min_fold, extra=list(res.extra) if extra else [])
+                alpha=alpha, min_fold=min_fold, extra=list(res.extra) if extra else [],
+                rule=" / ".join(sorted(rules)))

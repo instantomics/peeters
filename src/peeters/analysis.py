@@ -120,7 +120,7 @@ def run(gating: str | Path | None, population: str | None, markers: list[str], *
         only: list[str] | None = None, samples: Any = None, out: str | Path = "/out/flowsom",
         per_file: int = 20000, xdim: int = 10, ydim: int = 10, metaclusters: int = 12,
         seed: int = 42, by: str | None = None, in_dir: str = "/in",
-        plots: bool = True) -> Result:
+        parts: dict[str, str] | None = None, plots: bool = True) -> Result:
     """Cluster ``population`` of the gating's files on ``markers`` (detectors or marker
     names) and count every file's events per node and metacluster.
 
@@ -132,7 +132,14 @@ def run(gating: str | Path | None, population: str | None, markers: list[str], *
     each file in the training aggregate (fewer when a file has fewer). ``samples``: a
     table (path or DataFrame) joined to the files; default the gating's own ``samples``.
     ``by``: a column of it (genotype, treatment) the files are ordered and drawn by.
+    ``parts``: label -> a population of the gating inside ``population`` (e.g. ``{"WT":
+    "WT donor", "EM3": "EM3 donor"}`` in a competitive chimera): the tree is trained on the
+    whole population, and every part of every file is counted on its own, as a row
+    ``"<file> · <label>"`` with columns ``source_file`` and ``part`` (compare them with
+    ``differential(res, "part", ..., paired="source_file")``).
     """
+    if parts and (gating is None or population is None):
+        raise ValueError("parts are populations of a gating, inside `population`")
     rng = np.random.default_rng(seed)
     g = ag.load_gating(gating) if gating is not None else None
     if g is not None:
@@ -151,13 +158,15 @@ def run(gating: str | Path | None, population: str | None, markers: list[str], *
     gated: list[np.ndarray] = []  # display units, events x names
     scales: list[list[ag.Scale]] = []
     rows = []
+    in_parts: list[dict[str, np.ndarray]] = []  # per file: part -> mask over its population
     for k, inp in enumerate(ins, 1):
         ev = ag.read_fcs(inp.path)
         p = ag.Prepared(g, inp.entry, ev)
         if g is not None and population is not None:
-            ms = ag.masks(p, {population})
+            ms = ag.masks(p, {population, *(parts or {}).values()})
             mask = ms[population]
             counts = {f"count {n}": int(m.sum()) for n, m in ms.items()}
+            in_parts.append({lab: ms[pop][mask] for lab, pop in (parts or {}).items()})
         else:
             mask = np.ones(ev.n, dtype=bool)
             counts = {}
@@ -187,6 +196,24 @@ def run(gating: str | Path | None, population: str | None, markers: list[str], *
                                                files_df.loc[dup, "data"]))]
     table, match = _samples_table(g, samples)
     files_df = _attach_samples(files_df, table, match)
+    base_cols = list(rows[0])
+    file_names = list(files_df["file"])  # one per file, before parts make rows of their own
+    # the units counted: a file, or each part of a file
+    units = []  # (row of the table, file index, mask over the file's population or None)
+    if parts:
+        part_rows = []
+        for k, row in enumerate(files_df.to_dict("records")):
+            for lab in parts:
+                m = in_parts[k][lab]
+                unit = {**row, "file": f"{row['file']} · {lab}", "source_file": row["file"],
+                        "part": lab, "population_events": int(m.sum()),
+                        "file_population_events": row["population_events"]}
+                part_rows.append(unit)
+                units.append((unit, k, m))
+        files_df = pd.DataFrame(part_rows)
+        base_cols += ["source_file", "file_population_events"]
+    else:
+        units = [(row, k, None) for k, row in enumerate(files_df.to_dict("records"))]
 
     # the aggregate: the same number of cells from every file
     take = []
@@ -206,7 +233,7 @@ def run(gating: str | Path | None, population: str | None, markers: list[str], *
     adata = ad.AnnData(agg)
     adata.var_names = labels
     adata.var["marker"] = labels
-    adata.obs["file"] = pd.Categorical(files_df["file"].to_numpy()[agg_file])
+    adata.obs["file"] = pd.Categorical(np.asarray(file_names)[agg_file])
     cols = labels[:len(markers)]
     fsom = fs.FlowSOM(adata, cols_to_use=cols, n_clusters=metaclusters, xdim=xdim, ydim=ydim,
                       seed=seed)
@@ -216,9 +243,15 @@ def run(gating: str | Path | None, population: str | None, markers: list[str], *
     # every file's gated events mapped onto the tree
     mc_rows, node_rows, med_rows = [], [], []
     col_idx = [labels.index(c) for c in cols]
-    for k, (x, row, sc) in enumerate(zip(gated, files_df.to_dict("records"), scales)):
-        nodes = (np.asarray(fsom.model.cluster_model.predict(x[:, col_idx])).astype(int)
-                 if x.shape[0] else np.zeros(0, dtype=int))
+    mapped: dict[int, np.ndarray] = {}
+    for row, k, part_mask in units:
+        x, sc = gated[k], scales[k]
+        if k not in mapped:  # each file's cells mapped once, whatever its parts
+            mapped[k] = (np.asarray(fsom.model.cluster_model.predict(x[:, col_idx])).astype(int)
+                         if x.shape[0] else np.zeros(0, dtype=int))
+        nodes = mapped[k]
+        if part_mask is not None:
+            nodes, x = nodes[part_mask], x[part_mask]
         mcs = node_mc[nodes] if len(nodes) else nodes
         total = max(len(nodes), 1)
         nc = np.bincount(nodes, minlength=n_nodes)
@@ -246,12 +279,13 @@ def run(gating: str | Path | None, population: str | None, markers: list[str], *
     med = pd.DataFrame(agg, columns=labels).groupby(cell_mc + 1).median()
     med.index.name = "metacluster"
     med.insert(0, "cells_in_aggregate", pd.Series(cell_mc + 1).value_counts().sort_index())
-    group_cols = [c for c in files_df.columns if c not in rows[0]]
+    group_cols = [c for c in files_df.columns if c not in base_cols]
 
     params = {"gating": str(gating) if gating else None, "population": population,
               "markers": cols, "extra": labels[len(markers):], "per_file": per_file,
               "xdim": xdim, "ydim": ydim, "metaclusters": metaclusters, "seed": seed,
-              "by": by, "files": len(ins), "aggregate_cells": int(agg.shape[0]),
+              "by": by, "files": len(ins), "parts": parts or None,
+              "aggregate_cells": int(agg.shape[0]),
               "scales": {lab: {"kind": s.kind, **s.p} for lab, s in zip(labels, scales[0])},
               "flowsom": getattr(fs, "__version__", None)}
     res = Result(fsom, cols, labels[len(markers):], files_df, metaclusters_df, nodes_df, med,
@@ -318,8 +352,9 @@ def load(folder: str | Path, out: str | Path | None = None) -> Result:
     params = json.loads((folder / "params.json").read_text())
     fsom = load_model(folder / "model.pkl")
     files = pd.read_csv(folder / "files.csv", dtype=str)
-    for col in ("events", "population_events"):
-        files[col] = pd.to_numeric(files[col])
+    for col in ("events", "population_events", "file_population_events"):
+        if col in files:
+            files[col] = pd.to_numeric(files[col])
     mcs = pd.read_csv(folder / "metaclusters.csv")[["file", "metacluster", "count", "percent"]]
     medians = pd.read_csv(folder / "metacluster_medians.csv", index_col="metacluster")
     return Result(fsom, params["markers"], params["extra"], files, mcs,

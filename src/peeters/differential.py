@@ -46,6 +46,13 @@ def _files(res, by: str, where: Any) -> pd.DataFrame:
     return files[keep]
 
 
+def rule(attrs: dict) -> str:
+    """What made a unit differ, in words for a legend."""
+    how = ("every pair the same way" if attrs.get("call") == "consistent"
+           else f"q < {attrs.get('alpha', 0.05)}")
+    return f"{how}, at least {attrs.get('min_fold', 1.5)}-fold"
+
+
 def _where_label(where: Any) -> str | None:
     if where is None:
         return None
@@ -64,19 +71,38 @@ def _stem(level: str, where_label: str | None) -> str:
     return f"differential_{level}_{slug}"
 
 
+#: how a unit is called different: by its q value, or by every pair going the same way
+CALLS = ("q", "consistent")
+
+
 def differential(res, by: str, groups: tuple[str, str] | None = None, *,
-                 level: str = "nodes", where: Any = None, alpha: float = 0.05,
-                 min_fold: float = 1.5, out: str | Path | None = None) -> pd.DataFrame:
+                 level: str = "nodes", where: Any = None, paired: str | None = None,
+                 call: str = "q", alpha: float = 0.05, min_fold: float = 1.5,
+                 out: str | Path | None = None) -> pd.DataFrame:
     """Compare two groups of files (``by``: a column of the files' samples, e.g. genotype;
     ``groups``: (reference, other), default the two values sorted) per node or metacluster.
     ``where``: only some files, e.g. ``{"cohort": "Exp2"}`` (or a function of the files
-    table). A unit ``differs`` when q < ``alpha`` and the medians differ at least
-    ``min_fold``-fold: ``up`` = more in ``other``. Written to ``<out>/differential_<level>.csv``
-    (``out`` default: the run's folder), ``differential_<level>_<subset>.csv`` with ``where``."""
-    from scipy.stats import mannwhitneyu
+    table).
+
+    Unpaired (default): each group's per-file shares, Mann-Whitney, the fold change of the
+    medians. ``paired``: a column that pairs a reference unit with an other one, e.g.
+    ``differential(res, "part", ("WT", "EM3"), paired="source_file")`` for two parts of the
+    same liver (``run(parts=...)``): per pair the log2 ratio of the two shares (each part's
+    share of its own cells, so a part that fills a node as well as the other gives 0, whatever
+    the mouse's chimerism), their median as the fold change, a Wilcoxon signed-rank test.
+
+    A unit ``differs`` (``direction`` up or down; up = more in ``other``) when it changes at
+    least ``min_fold``-fold and, with ``call="q"``, q < ``alpha`` (Benjamini-Hochberg over the
+    units tested), or with ``call="consistent"`` (paired only) every pair goes that way: with
+    few pairs no q can pass (5 pairs: p >= 0.0625), and the more units the stricter the
+    correction. Written to ``<out>/differential_<level>[_<subset>].csv`` (``out`` default: the
+    run's folder)."""
+    from scipy.stats import mannwhitneyu, wilcoxon
 
     if level not in ("nodes", "metaclusters"):
         raise ValueError("level is nodes or metaclusters")
+    if call not in CALLS or (call == "consistent" and not paired):
+        raise ValueError("call is q, or consistent (with paired)")
     files = _files(res, by, where)
     values = [v for v in files[by].dropna().unique()]
     if groups is None:
@@ -86,27 +112,47 @@ def differential(res, by: str, groups: tuple[str, str] | None = None, *,
     ref, other = (str(g) for g in groups)
     labels = files[by].astype(str)
     a, b = labels[labels == ref].index, labels[labels == other].index
+    if paired:
+        if paired not in files:
+            raise KeyError(f"no column {paired!r} to pair by; the files have "
+                           f"{', '.join(files.columns)}")
+        ka, kb = files.loc[a, paired].astype(str), files.loc[b, paired].astype(str)
+        keys = sorted(set(ka) & set(kb))
+        if any(ka.duplicated()) or any(kb.duplicated()):
+            raise ValueError(f"{paired} must name one {ref} and one {other} unit per pair")
+        a = pd.Index([ka[ka == k].index[0] for k in keys])
+        b = pd.Index([kb[kb == k].index[0] for k in keys])
+    need = "pairs" if paired else "files each"
     if len(a) < 2 or len(b) < 2:
-        raise ValueError(f"{ref}: {len(a)} files, {other}: {len(b)}; a test needs at least 2 each")
+        raise ValueError(f"{ref}: {len(a)}, {other}: {len(b)}; a test needs at least 2 {need}")
     wide = res.wide(level, "percent").fillna(0.0)
     col = "node" if level == "nodes" else "metacluster"
     rows = []
     for unit in wide.columns:
         x, y = wide.loc[a, unit].to_numpy(), wide.loc[b, unit].to_numpy()
         tested = not (np.all(x == 0) and np.all(y == 0))
-        p = float(mannwhitneyu(x, y, alternative="two-sided").pvalue) if tested else 1.0
         mx, my = float(np.median(x)), float(np.median(y))
-        rows.append({col: int(unit), f"median {ref}": mx, f"median {other}": my,
-                     f"mean {ref}": float(x.mean()), f"mean {other}": float(y.mean()),
-                     "log2_fold": float(np.log2((my + PSEUDO) / (mx + PSEUDO))), "p": p,
-                     "tested": tested})
+        row = {col: int(unit), f"median {ref}": mx, f"median {other}": my,
+               f"mean {ref}": float(x.mean()), f"mean {other}": float(y.mean())}
+        if paired:
+            r = np.log2((y + PSEUDO) / (x + PSEUDO))
+            lf = float(np.median(r))
+            p = float(wilcoxon(r).pvalue) if tested and np.any(r != 0) else 1.0
+            row.update({"log2_fold": lf, "p": p, "tested": tested, "pairs": len(r),
+                        "agree": int((np.sign(r) == np.sign(lf)).sum()) if lf else 0})
+        else:
+            p = float(mannwhitneyu(x, y, alternative="two-sided").pvalue) if tested else 1.0
+            row.update({"log2_fold": float(np.log2((my + PSEUDO) / (mx + PSEUDO))), "p": p,
+                        "tested": tested})
+        rows.append(row)
     df = pd.DataFrame(rows)
     df["q"] = 1.0
     t = df["tested"].to_numpy()
     if t.any():
         df.loc[t, "q"] = _bh(df.loc[t, "p"].to_numpy())
     big = df["log2_fold"].abs() >= np.log2(min_fold)
-    df["direction"] = np.where((df["q"] < alpha) & big,
+    passed = (df["agree"] == df["pairs"]) if call == "consistent" else (df["q"] < alpha)
+    df["direction"] = np.where(passed & big & df["tested"],
                                np.where(df["log2_fold"] > 0, "up", "down"), "")
     if level == "nodes":
         node_mc = res.nodes.drop_duplicates("node").set_index("node")["metacluster"]
@@ -114,14 +160,17 @@ def differential(res, by: str, groups: tuple[str, str] | None = None, *,
     df.attrs.update({"by": by, "reference": ref, "other": other, "level": level,
                      "alpha": alpha, "min_fold": min_fold, "n_reference": len(a),
                      "n_other": len(b), "files_reference": list(a), "files_other": list(b),
+                     "paired": paired, "call": call,
                      "where": repr(where) if where is not None else None,
                      "where_label": _where_label(where)})
     target = Path(out) if out is not None else res.out
     target.mkdir(parents=True, exist_ok=True)
     df.to_csv(target / f"{_stem(level, df.attrs['where_label'])}.csv", index=False)
     n_up, n_down = int((df["direction"] == "up").sum()), int((df["direction"] == "down").sum())
-    print(f"{level}: {other} ({len(b)} files) vs {ref} ({len(a)}): {n_up} up, {n_down} down "
-          f"(q < {alpha}, at least {min_fold}-fold)")
+    how = ("every pair the same way" if call == "consistent" else f"q < {alpha}") + \
+        f", at least {min_fold}-fold"
+    size = f"{len(a)} pairs" if paired else f"{len(b)} vs {len(a)} files"
+    print(f"{level}: {other} vs {ref} ({size}): {n_up} up, {n_down} down ({how})")
     return df
 
 
@@ -171,7 +220,8 @@ def plot_differential(res, diff: pd.DataFrame, path: str | Path | None = None, *
         plots.draw_tree(ax, res, sizes[g], view=view, ref=top, band=band, labels=text,
                         stars=stars, labels_outside=True)
         n = at["n_reference"] if g == ref else at["n_other"]
-        ax.set_title(f"{by} = {g}  ·  median of {n} files", loc="left")
+        ax.set_title(f"{by} = {g}  ·  median of {n} " + ("units" if at.get("paired") else "files"),
+                     loc="left")
     if stars:
         plots.star_legend(lax, list(res.markers))
     else:
@@ -180,8 +230,8 @@ def plot_differential(res, diff: pd.DataFrame, path: str | Path | None = None, *
     cb = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), cax=cax, orientation="horizontal")
     cb.outline.set_visible(False)
     cb.ax.tick_params(labelsize=7, length=0)
-    cb.set_label(f"ring: log2 fold change, {other} vs {ref}  (q < {at['alpha']}, at least "
-                 f"{at['min_fold']}-fold)", fontsize=8, color=style.INK_2)
+    cb.set_label(f"ring: log2 fold change, {other} vs {ref}  ({rule(at)})", fontsize=8,
+                 color=style.INK_2)
     unit = "node" if level == "nodes" else "metacluster"
     n_up, n_down = int(diff["direction"].eq("up").sum()), int(diff["direction"].eq("down").sum())
     fig.suptitle(f"{other} vs {ref}:  {n_up} {unit}{'' if n_up == 1 else 's'} more,  "
