@@ -13,3 +13,7 @@ gh release create "v${version}" -t "v${version}" -n "v${version}" dist/peeters-"
 
 set -a; . ~/.secrets/pypi.env; set +a
 uv publish dist/peeters-"${version}"*
+
+# a DOI for this version, under the concept DOI of CITATION.cff (scripts/zenodo_release.py)
+set -a; . ~/.secrets/zenodo.env; set +a
+python3 scripts/zenodo_release.py "${version}"
