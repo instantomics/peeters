@@ -1,11 +1,12 @@
 cff-version: 1.2.0
-message: "If you use peeters, please cite the version you used (its DOI is on Zenodo), and FlowSOM."
+message: "If you use peeters, please cite it with this DOI and the version you used, and FlowSOM."
 title: "peeters: FlowSOM on gated flow cytometry populations, differential abundance between conditions, and its figures"
 type: software
 authors:
   - family-names: Saelens
     given-names: Wouter
 license: MIT
+doi: "10.5281/zenodo.24524300"
 repository-code: "https://github.com/instantomics/peeters"
 url: "https://pypi.org/project/peeters/"
 keywords:

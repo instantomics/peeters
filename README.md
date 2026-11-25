@@ -1,5 +1,7 @@
 # Peeters
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24524300.svg)](https://doi.org/10.5281/zenodo.24524300)
+
 FlowSOM on a gated flow cytometry population over many FCS files, and differential
 abundance between conditions, drawn on the FlowSOM tree and as a node heatmap.
 
@@ -49,8 +51,13 @@ figures; `load(folder)` reads a run back without training again.
 
 ## Citing
 
-Every release is archived on Zenodo with a DOI of its own: cite the version you used (the
-DOI of a version is on its Zenodo page and in the GitHub release), and FlowSOM:
+Cite peeters with its DOI and the version you used, and FlowSOM:
+
+> Saelens W. peeters (version 0.1.2). Zenodo.
+> [doi:10.5281/zenodo.24524300](https://doi.org/10.5281/zenodo.24524300)
+
+The DOI stays the same across versions and always leads to the latest; each version also
+has a DOI of its own on its Zenodo page, for pinning an exact archive.
 
 - Van Gassen S, et al. FlowSOM: Using self-organizing maps for visualization and
   interpretation of cytometry data. *Cytometry A* 87, 636-645 (2015).
@@ -63,5 +70,6 @@ GitHub's *Cite this repository* (from `CITATION.cff`) gives the same.
 
 ## Release
 
-`./dist.sh <version>` from a clean, pushed `main`: tags, builds, makes the GitHub release
-and publishes to PyPI (the token in `~/.secrets/pypi.env`).
+`./dist.sh <version>` from a clean, pushed `main`: tags, builds, makes the GitHub release,
+publishes to PyPI (`~/.secrets/pypi.env`) and archives the version on Zenodo under the DOI of
+`CITATION.cff` (`scripts/zenodo_release.py`, `~/.secrets/zenodo.env`).
