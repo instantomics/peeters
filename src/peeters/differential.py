@@ -50,7 +50,8 @@ def rule(attrs: dict) -> str:
     """What made a unit differ, in words for a legend."""
     how = ("every pair the same way" if attrs.get("call") == "consistent"
            else f"q < {attrs.get('alpha', 0.05)}")
-    return f"{how}, at least {attrs.get('min_fold', 1.5)}-fold"
+    fold, cells = attrs.get("min_fold", 1.5), attrs.get("min_events", 20)
+    return f"{how}, at least {fold}-fold, {cells}+ cells"
 
 
 def _where_label(where: Any) -> str | None:
@@ -78,7 +79,7 @@ CALLS = ("q", "consistent")
 def differential(res, by: str, groups: tuple[str, str] | None = None, *,
                  level: str = "nodes", where: Any = None, paired: str | None = None,
                  call: str = "q", alpha: float = 0.05, min_fold: float = 1.5,
-                 out: str | Path | None = None) -> pd.DataFrame:
+                 min_events: int = 20, out: str | Path | None = None) -> pd.DataFrame:
     """Compare two groups of files (``by``: a column of the files' samples, e.g. genotype;
     ``groups``: (reference, other), default the two values sorted) per node or metacluster.
     ``where``: only some files, e.g. ``{"cohort": "Exp2"}`` (or a function of the files
@@ -95,8 +96,14 @@ def differential(res, by: str, groups: tuple[str, str] | None = None, *,
     least ``min_fold``-fold and, with ``call="q"``, q < ``alpha`` (Benjamini-Hochberg over the
     units tested), or with ``call="consistent"`` (paired only) every pair goes that way: with
     few pairs no q can pass (5 pairs: p >= 0.0625), and the more units the stricter the
-    correction. Written to ``<out>/differential_<level>[_<subset>].csv`` (``out`` default: the
-    run's folder)."""
+    correction.
+
+    ``min_events``: a unit is tested only with enough cells to measure a share: paired, at
+    least this many of the two parts together in every pair; unpaired, at least this many in
+    every file of one of the groups (so a unit one group lost is still tested). With fewer,
+    a ratio of shares measures counting noise. The others get ``tested`` False and no call,
+    and the correction runs over the units tested. Written to
+    ``<out>/differential_<level>[_<subset>].csv`` (``out`` default: the run's folder)."""
     from scipy.stats import mannwhitneyu, wilcoxon
 
     if level not in ("nodes", "metaclusters"):
@@ -126,14 +133,18 @@ def differential(res, by: str, groups: tuple[str, str] | None = None, *,
     if len(a) < 2 or len(b) < 2:
         raise ValueError(f"{ref}: {len(a)}, {other}: {len(b)}; a test needs at least 2 {need}")
     wide = res.wide(level, "percent").fillna(0.0)
+    counts = res.wide(level, "count").fillna(0).reindex(columns=wide.columns, fill_value=0)
     col = "node" if level == "nodes" else "metacluster"
     rows = []
     for unit in wide.columns:
         x, y = wide.loc[a, unit].to_numpy(), wide.loc[b, unit].to_numpy()
-        tested = not (np.all(x == 0) and np.all(y == 0))
+        cx, cy = counts.loc[a, unit].to_numpy(), counts.loc[b, unit].to_numpy()
+        fewest = int((cx + cy).min()) if paired else int(max(cx.min(), cy.min()))
+        tested = not (np.all(x == 0) and np.all(y == 0)) and fewest >= min_events
         mx, my = float(np.median(x)), float(np.median(y))
         row = {col: int(unit), f"median {ref}": mx, f"median {other}": my,
-               f"mean {ref}": float(x.mean()), f"mean {other}": float(y.mean())}
+               f"mean {ref}": float(x.mean()), f"mean {other}": float(y.mean()),
+               "fewest_events": fewest}
         if paired:
             r = np.log2((y + PSEUDO) / (x + PSEUDO))
             lf = float(np.median(r))
@@ -160,7 +171,7 @@ def differential(res, by: str, groups: tuple[str, str] | None = None, *,
     df.attrs.update({"by": by, "reference": ref, "other": other, "level": level,
                      "alpha": alpha, "min_fold": min_fold, "n_reference": len(a),
                      "n_other": len(b), "files_reference": list(a), "files_other": list(b),
-                     "paired": paired, "call": call,
+                     "paired": paired, "call": call, "min_events": min_events,
                      "where": repr(where) if where is not None else None,
                      "where_label": _where_label(where)})
     target = Path(out) if out is not None else res.out
@@ -168,7 +179,8 @@ def differential(res, by: str, groups: tuple[str, str] | None = None, *,
     df.to_csv(target / f"{_stem(level, df.attrs['where_label'])}.csv", index=False)
     n_up, n_down = int((df["direction"] == "up").sum()), int((df["direction"] == "down").sum())
     how = ("every pair the same way" if call == "consistent" else f"q < {alpha}") + \
-        f", at least {min_fold}-fold"
+        f", at least {min_fold}-fold, {min_events}+ events; {int((~df['tested']).sum())} " \
+        f"{'unit' if (~df['tested']).sum() == 1 else 'units'} not tested"
     size = f"{len(a)} pairs" if paired else f"{len(b)} vs {len(a)} files"
     print(f"{level}: {other} vs {ref} ({size}): {n_up} up, {n_down} down ({how})")
     return df

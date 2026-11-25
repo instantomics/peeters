@@ -23,7 +23,8 @@ pip install peeters
 3. **Count** each file's share of every node and metacluster, and the medians of every marker.
 4. **Compare** two groups of files per node or metacluster, as FlowSOM's `GroupStats` does:
    per-file shares, Mann-Whitney test, Benjamini-Hochberg; or two parts of the same samples,
-   paired (Wilcoxon signed-rank on the per-sample log2 ratios).
+   paired (Wilcoxon signed-rank on the per-sample log2 ratios). A node is tested only with
+   enough cells behind its shares (`min_events`, 20 by default).
 5. **Draw** it: the tree with a coloured band around every node that differs, and a node
    heatmap with each node as high as its share and a strip per comparison.
 

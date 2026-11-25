@@ -119,6 +119,12 @@ def test_paired_comparison_finds_where_em3_falls_short(chimeras, tmp_path):
     assert node_heatmap(res, [nodes, a]).exists()
     assert plot_differential(res, nodes).exists()
 
+    # with more cells asked of every pair than any node has, nothing is tested or called
+    none = differential(res, "part", ("WT", "EM3"), paired="source_file", call="consistent",
+                        min_events=10**6, out=tmp_path / "d")
+    assert not none["tested"].any() and (none["direction"] == "").all()
+    assert (nodes["fewest_events"] >= 0).all()
+
     with pytest.raises(ValueError, match="consistent"):
         differential(res, "part", ("WT", "EM3"), call="consistent")  # not paired
     with pytest.raises(ValueError, match="one WT and one EM3"):
