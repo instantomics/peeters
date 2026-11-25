@@ -79,6 +79,15 @@ def _order(profiles: pd.DataFrame, node_mc: pd.Series) -> tuple[list[int], list[
     return mc_order, groups
 
 
+def _text_width(text: str, size: float) -> float:
+    """How wide a line of text is, in inches, in the figures' font."""
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.textpath import TextPath
+
+    style.apply()
+    return TextPath((0, 0), text, size=size, prop=FontProperties()).get_extents().width / 72
+
+
 def _spread(want: list[float], gap: float, lo: float, hi: float) -> list[float]:
     """Label positions as near their places as can be, at least ``gap`` apart, within
     [lo, hi] (inches, in order)."""
@@ -149,7 +158,15 @@ def draw(profiles: pd.DataFrame, node_mc: pd.Series, share: pd.Series,
     short_cmp = n_cmp * cmp_cell
     short = short_cmp + cmp_gap + len(markers) * CELL + (ex_gap if extra else 0)
 
-    left, right, top_m, bot = 3.3, 1.2, 1.75, 1.0
+    # the left margin holds the longest metacluster label, measured in its own font
+    heads, subs = [], []
+    for m, nodes in zip(mc_order, groups):
+        named = names.get(m)
+        heads.append(f"MC{m}  {named or pheno[m]}")
+        subs.append((f"{pheno[m]} · " if named else "") + f"{mc_share[m]:.1f}% · "
+                    f"{len(nodes)} node{'' if len(nodes) == 1 else 's'}")
+    label_in = max([_text_width(t, 8.2) for t in heads] + [_text_width(t, 6.6) for t in subs])
+    left, right, top_m, bot = max(3.3, label_in + 0.75), 1.2, 1.75, 1.0
     W, H = left + short + right, top_m + LONG + bot
     fig = plt.figure(figsize=(W, H))
     ax = fig.add_axes([left / W, bot / H, short / W, LONG / H])
@@ -192,11 +209,7 @@ def draw(profiles: pd.DataFrame, node_mc: pd.Series, share: pd.Series,
     # metacluster labels, moved apart where they would touch, a line to where they belong
     want = [(span[m][0] + span[m][1]) / 2 * k_in for m in mc_order]
     got = _spread(want, 0.34, 0.1, LONG - 0.1)
-    for m, nodes, w, g in zip(mc_order, groups, want, got):
-        named = names.get(m)
-        head = f"MC{m}  {named or pheno[m]}"
-        sub = (f"{pheno[m]} · " if named else "") + \
-            f"{mc_share[m]:.1f}% · {len(nodes)} node{'' if len(nodes) == 1 else 's'}"
+    for head, sub, w, g in zip(heads, subs, want, got):
         ax.plot([-0.05, -0.2, -0.38], [w, w, g], color=style.MUTED, lw=0.5, clip_on=False)
         ax.text(-0.45, g - 0.02, head, ha="right", va="bottom", fontsize=8.2,
                 color=style.INK, clip_on=False)

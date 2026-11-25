@@ -223,7 +223,16 @@ def test_differential_finds_the_shift_and_draws_the_bands(tmp_path):
     a = differential(res, "genotype", ("WT", "KO"), where={"cohort": "A"}, out=tmp_path / "sub")
     b = differential(res, "genotype", ("WT", "KO"), where={"cohort": "B"}, out=tmp_path / "sub")
     assert comparison_label(a) == "A | 3 vs 3 files | KO vs WT"
-    assert node_heatmap(res, [nodes, a, b], names={kc: "KC-like"}).exists()
+    # two subsets compared in one folder keep their own files
+    assert {p.name for p in (tmp_path / "sub").glob("differential_nodes*.csv")} >= {
+        "differential_nodes_A.csv", "differential_nodes_B.csv"}
+    assert plot_differential(res, a).name == "differential_nodes_A.png"
+    short = node_heatmap(res, [nodes, a, b], names={kc: "KC-like"}, path=tmp_path / "s.png")
+    # a long name widens the margin instead of running off the figure
+    long = node_heatmap(res, [nodes, a, b], path=tmp_path / "l.png", names={
+        kc: "Resident Kupffer cell-like, Tim4-high Vsig4-high, MHC II-low and long"})
+    from PIL import Image
+    assert Image.open(long).size[0] > Image.open(short).size[0]
     with pytest.raises(ValueError, match="node-level"):
         node_heatmap(res, mc)
 

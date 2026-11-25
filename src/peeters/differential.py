@@ -9,6 +9,7 @@ Wilcoxon rank-sum test (Mann-Whitney U) and Benjamini-Hochberg over the nodes te
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,15 @@ def _where_label(where: Any) -> str | None:
                       for v in where.values())
 
 
+def _stem(level: str, where_label: str | None) -> str:
+    """``differential_nodes``, or ``differential_nodes_Exp2`` for a subset: two subsets
+    compared in one folder keep their own files."""
+    if not where_label:
+        return f"differential_{level}"
+    slug = re.sub(r"[^A-Za-z0-9.+-]+", "_", where_label).strip("_")
+    return f"differential_{level}_{slug}"
+
+
 def differential(res, by: str, groups: tuple[str, str] | None = None, *,
                  level: str = "nodes", where: Any = None, alpha: float = 0.05,
                  min_fold: float = 1.5, out: str | Path | None = None) -> pd.DataFrame:
@@ -62,7 +72,7 @@ def differential(res, by: str, groups: tuple[str, str] | None = None, *,
     ``where``: only some files, e.g. ``{"cohort": "Exp2"}`` (or a function of the files
     table). A unit ``differs`` when q < ``alpha`` and the medians differ at least
     ``min_fold``-fold: ``up`` = more in ``other``. Written to ``<out>/differential_<level>.csv``
-    (``out`` default: the run's folder)."""
+    (``out`` default: the run's folder), ``differential_<level>_<subset>.csv`` with ``where``."""
     from scipy.stats import mannwhitneyu
 
     if level not in ("nodes", "metaclusters"):
@@ -108,7 +118,7 @@ def differential(res, by: str, groups: tuple[str, str] | None = None, *,
                      "where_label": _where_label(where)})
     target = Path(out) if out is not None else res.out
     target.mkdir(parents=True, exist_ok=True)
-    df.to_csv(target / f"differential_{level}.csv", index=False)
+    df.to_csv(target / f"{_stem(level, df.attrs['where_label'])}.csv", index=False)
     n_up, n_down = int((df["direction"] == "up").sum()), int((df["direction"] == "down").sum())
     print(f"{level}: {other} ({len(b)} files) vs {ref} ({len(a)}): {n_up} up, {n_down} down "
           f"(q < {alpha}, at least {min_fold}-fold)")
@@ -176,5 +186,6 @@ def plot_differential(res, diff: pd.DataFrame, path: str | Path | None = None, *
     n_up, n_down = int(diff["direction"].eq("up").sum()), int(diff["direction"].eq("down").sum())
     fig.suptitle(f"{other} vs {ref}:  {n_up} {unit}{'' if n_up == 1 else 's'} more,  "
                  f"{n_down} fewer", x=0.02, ha="left", fontsize=13)
-    path = Path(path) if path is not None else res.out / f"differential_{level}.png"
+    path = Path(path) if path is not None else \
+        res.out / f"{_stem(level, at.get('where_label'))}.png"
     return plots._save(fig, path)
